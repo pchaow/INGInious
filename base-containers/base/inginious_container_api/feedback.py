@@ -47,19 +47,21 @@ def save_feedback(rdict):
 # Doing the real stuff
 def set_global_result(result):
     """ Set global result value """
-    rdict = _load_feedback()
-    rdict['result'] = result
-    save_feedback(rdict)
+    if isinstance(result, str):
+        rdict = _load_feedback()
+        rdict['result'] = result
+        save_feedback(rdict)
 
 
 def set_problem_result(result, problem_id):
     """ Set problem specific result value """
-    rdict = _load_feedback()
-    if not 'problems' in rdict:
-        rdict['problems'] = {}
-    cur_val = rdict['problems'].get(problem_id, '')
-    rdict['problems'][problem_id] = [result, cur_val] if type(cur_val) == str else [result, cur_val[1]]
-    save_feedback(rdict)
+    if isinstance(result, str):
+        rdict = _load_feedback()
+        if not 'problems' in rdict:
+            rdict['problems'] = {}
+        cur_val = rdict['problems'].get(problem_id, '')
+        rdict['problems'][problem_id] = [result, cur_val] if type(cur_val) == str else [result, cur_val[1]]
+        save_feedback(rdict)
 
 
 def set_grade(grade):
