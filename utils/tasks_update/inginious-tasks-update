@@ -1,0 +1,90 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# This file is part of INGInious. See the LICENSE and the COPYRIGHTS files for
+# more information about the licensing of this file.
+
+""" Updates the task files """
+import base64
+import logging
+import argparse
+
+from inginious.frontend.course_factory import create_factories
+from inginious.common.tasks_problems import *
+from inginious.common.entrypoints import get_args_and_filesystem
+from inginious.frontend.task_dispensers.toc import TableOfContents
+from inginious.frontend.task_dispensers.combinatory_test import CombinatoryTest
+
+
+def import_class(name):
+    m = name.split('.')
+    mod = __import__(m[0])
+
+    for comp in m[1:]:
+        mod = getattr(mod, comp)
+    return mod
+
+def migrate_from_v0_6():
+
+    # create course factory
+    course_factory, task_factory = create_factories(fsprovider, task_dispensers, {problem_type.get_type(): problem_type for problem_type in ptypes})
+
+    courses = course_factory.get_all_courses()
+
+    for courseid, course in courses.items():
+        print("Updating course {}".format(courseid))
+        course_descr = course_factory.get_course_descriptor_content(courseid)
+        tasks = course.get_tasks()
+        for taskid, task in tasks.items():
+            print("..." + taskid)
+            task_descr = task_factory.get_task_descriptor_content(courseid, taskid)
+            if "tags" in task_descr:
+                tags = task_descr["tags"]
+                for idx, tag in tags.items():
+                    if not tag["id"]:
+                        tag["id"] = base64.b16encode(tag["name"].encode("utf-8")).decode("utf-8")
+                        print("Processing category tag '{}', new tag id : {}".format(tag["name"], tag["id"]))
+                        task_descr.setdefault("categories", []).append(tag["id"])
+                    elif tag["type"] == 0:
+                        task_descr.setdefault("categories", []).append(tag["id"])
+                    course_descr.setdefault("tags", {})[tag["id"]] = tag
+                del task_descr["tags"]
+            task_factory.update_task_descriptor_content(courseid, taskid, task_descr)
+        course_factory.update_course_descriptor_content(courseid, course_descr)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ptype", nargs="+", help="Python class import path for additionnal subproblem types")
+    parser.add_argument("-v", "--verbose", help="increase output verbosity",
+                        action="store_true")
+    parser.add_argument("current_version", help="current INGInious version (v0.6, v0.7...)", type=str)
+    (args, fsprovider) = get_args_and_filesystem(parser)
+
+    # create logger
+    logger = logging.getLogger("inginious")
+    logger.setLevel(logging.INFO if not args.verbose else logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO if not args.verbose else logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    task_dispensers = {TableOfContents.get_id(): TableOfContents,
+                       CombinatoryTest.get_id(): CombinatoryTest}
+
+    # load ptypes
+    ptypes = {MultipleChoiceProblem, MatchProblem, CodeProblem, CodeSingleLineProblem, FileProblem}
+
+    if args.ptype:
+        for ptype_loc in args.ptype:
+            try:
+                print(ptype_loc)
+                ptypes.add(import_class(ptype_loc))
+            except:
+                logger.exception("Cannot load %s, exiting", ptype_loc)
+                exit(1)
+
+    func_to_call = {"v0.6": migrate_from_v0_6}
+    if args.current_version not in func_to_call:
+        logger.exception("Unknown version, available versions : {}".format(",".join(func_to_call.keys())))
+        exit(1)

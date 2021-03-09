@@ -86,6 +86,7 @@ setup(
         'inginious-autotest',
         'utils/sync/inginious-synchronize',
         'utils/container_update/inginious-container-update',
+        'utils/tasks_update/inginious-tasks-update',
         'utils/database_updater/inginious-database-update'
     ],
 
