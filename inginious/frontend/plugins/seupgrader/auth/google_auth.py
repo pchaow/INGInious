@@ -82,4 +82,4 @@ def init(plugin_manager, course_factory, client, conf):
     domain = conf.get("domain", "")
 
     plugin_manager.register_auth_method(GoogleAuthMethod(conf.get("id"),
-        conf.get('name', 'Google'), client_id, client_secret, domain))
+        conf.get('name', 'UP Account'), client_id, client_secret, domain))
