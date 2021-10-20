@@ -9,16 +9,15 @@ import hashlib
 import os
 import tarfile
 import tempfile
+import re
 import urllib.request
 from binascii import hexlify
 import docker
 from docker.errors import BuildError
-
 from gridfs import GridFS
 from pymongo import MongoClient
-
+from inginious import __version__
 import inginious.common.custom_yaml as yaml
-
 
 HEADER = '\033[95m'
 INFO = '\033[94m'
@@ -93,6 +92,28 @@ class Installer:
                 return int(self._ask_with_default(question, default))
             except:
                 pass
+
+    def _configure_directory(self, dirtype: str):
+        """Configure user specified directory and create it if required"""
+        self._display_question("Please choose a directory in which to store the %s files." % dirtype)
+        directory = None
+        while directory is None:
+            directory = self._ask_with_default("%s directory" % (dirtype[0].upper()+dirtype[1:]), "./%s" % dirtype)
+            if not os.path.exists(directory):
+                if self._ask_boolean("Path does not exist. Create directory?", True):
+                    try:
+                        os.makedirs(directory)
+                    except FileExistsError:
+                        pass # We should never reach this part since the path is verified above
+                    except PermissionError:
+                        self._display_error("Permission denied. Are you sure of your path?\nIf yes, contact your system administrator"
+                                            " or create manually the directory with the correct user permissions.\nOtherwise, you may"
+                                            " enter a new path now.")
+                        directory = None
+                else:
+                    directory = None
+
+        return os.path.abspath(directory)
 
     #######################################
     #            Main function            #
@@ -341,16 +362,7 @@ class Installer:
 
     def configure_task_directory(self):
         """ Configure task directory """
-        self._display_question(
-            "Please choose a directory in which to store the course/task files. By default, the tool will put them in the current "
-            "directory")
-        task_directory = None
-        while task_directory is None:
-            task_directory = self._ask_with_default("Task directory", ".")
-            if not os.path.exists(task_directory):
-                self._display_error("Path does not exists")
-                if self._ask_boolean("Would you like to retry?", True):
-                    task_directory = None
+        task_directory = self._configure_directory("tasks")
 
         if os.path.exists(task_directory):
             self._display_question("Demonstration tasks can be downloaded to let you discover INGInious.")
@@ -376,20 +388,57 @@ class Installer:
         self._display_info("done.".format(name))
 
     def select_containers_to_build(self):
+        #If on a dev branch, download from github master branch (then manually rebuild if needed)
+        #If on an pip installed version, download with the correct tag
         if not self._ask_boolean("Build the default containers? This is highly recommended, and is required to build other containers.", True):
             self._display_info("Skipping container building.")
             return
 
+        # Mandatory images:
+        stock_images = []
+        try:
+            docker_connection = docker.from_env()
+            for image in docker_connection.images.list():
+                for tag in image.attrs["RepoTags"]:
+                    if re.match(r"^ingi/inginious-c-(base|default):v" + __version__, tag):
+                        stock_images.append(tag)
+        except:
+            self._display_info(FAIL + "Cannot connect to Docker!" + ENDC)
+            self._display_info(FAIL + "Restart this command after making sure the command `docker info` works" + ENDC)
+            return
+
+        # If there are already available images, ask to rebuild or not
+        if len(stock_images) >= 2:
+            self._display_info("You already have the minimum required images for version " + __version__)
+            if not self._ask_boolean("Do you want to re-build them ?", "yes"):
+                self._display_info("Continuing with previous images. If you face issues, run inginious-container-update")
+                return
         try:
             with tempfile.TemporaryDirectory() as tmpdirname:
                 self._display_info("Downloading the base container source directory...")
-                self._retrieve_and_extract_tarball("https://api.github.com/repos/UCL-INGI/INGInious/tarball", tmpdirname)
-                self._build_container("ingi/inginious-c-base", os.path.join(tmpdirname, "base-containers", "base"))
-                self._build_container("ingi/inginious-c-default", os.path.join(tmpdirname, "base-containers", "default"))
+                if "dev" in __version__:
+                    tarball_url = "https://api.github.com/repos/UCL-INGI/INGInious/tarball"
+                    containers_version = "dev (github branch master)"
+                    dev = True
+                else:
+                    tarball_url = "https://api.github.com/repos/UCL-INGI/INGInious/tarball/v" + __version__
+                    containers_version = __version__
+                    dev = False
+                self._display_info("Downloading containers for version:" + containers_version)
+                self._retrieve_and_extract_tarball(tarball_url, tmpdirname)
+                self._build_container("ingi/inginious-c-base",
+                                      os.path.join(tmpdirname, "base-containers", "base"))
+                self._build_container("ingi/inginious-c-default",
+                                      os.path.join(tmpdirname, "base-containers", "default"))
+                if dev:
+                    self._display_info("If you modified files in base-containers folder, don't forget to rebuild manually to make these changes effective !")
 
+
+            # Other non-mandatory containers:
             with tempfile.TemporaryDirectory() as tmpdirname:
                 self._display_info("Downloading the other containers source directory...")
-                self._retrieve_and_extract_tarball("https://api.github.com/repos/UCL-INGI/INGInious-containers/tarball", tmpdirname)
+                self._retrieve_and_extract_tarball(
+                    "https://api.github.com/repos/UCL-INGI/INGInious-containers/tarball", tmpdirname)
 
                 todo = {"ingi/inginious-c-base": None, "ingi/inginious-c-default": "ingi/inginious-c-base"}
                 available_containers = set(os.listdir(os.path.join(tmpdirname, 'grading')))
@@ -399,19 +448,24 @@ class Installer:
                     if container in todo:
                         return
                     line_from = \
-                    [l for l in open(os.path.join(tmpdirname, 'grading', container, 'Dockerfile')).read().split("\n") if
-                     l.startswith("FROM")][0]
+                        [l for l in
+                         open(os.path.join(tmpdirname, 'grading', container, 'Dockerfile')).read().split("\n")
+                         if
+                         l.startswith("FROM")][0]
                     supercontainer = line_from.strip()[4:].strip().split(":")[0]
                     if supercontainer.startswith("ingi/") and supercontainer not in todo:
-                        self._display_info("Container {} requires container {}, I'll build it too.".format(container, supercontainer))
+                        self._display_info(
+                            "Container {} requires container {}, I'll build it too.".format(container,
+                                                                                            supercontainer))
                         add_container(supercontainer)
                     todo[container] = supercontainer if supercontainer.startswith("ingi/") else None
 
                 self._display_info("The following containers can be built:")
                 for container in available_containers:
-                    self._display_info("\t"+container)
+                    self._display_info("\t" + container)
                 while True:
-                    answer = self._ask_with_default("Indicate the name of a container to build, or press enter to continue")
+                    answer = self._ask_with_default(
+                        "Indicate the name of a container to build, or press enter to continue")
                     if answer == "":
                         break
                     if answer not in available_containers:
@@ -429,11 +483,17 @@ class Installer:
                         del todo[x]
                     for container in todo_now:
                         try:
-                            self._build_container("ingi/inginious-c-{}".format(container), os.path.join(tmpdirname, 'grading', container))
+                            self._build_container("ingi/inginious-c-{}".format(container),
+                                                  os.path.join(tmpdirname, 'grading', container))
                         except BuildError:
-                            self._display_error("An error occured while building the container. Please retry manually.")
+                            self._display_error(
+                                "An error occured while building the container. Please retry manually.")
         except Exception as e:
             self._display_error("An error occurred while copying the directory: {}".format(e))
+
+
+
+
 
     #######################################
     #                MISC                 #
@@ -450,17 +510,7 @@ class Installer:
 
     def configure_backup_directory(self):
         """ Configure backup directory """
-        self._display_question("Please choose a directory in which to store the backup files. By default, the tool will them in the current "
-                               "directory")
-        backup_directory = None
-        while backup_directory is None:
-            backup_directory = self._ask_with_default("Backup directory", ".")
-            if not os.path.exists(backup_directory):
-                self._display_error("Path does not exists")
-                if self._ask_boolean("Would you like to retry?", True):
-                    backup_directory = None
-
-        return {"backup_directory": backup_directory}
+        return {"backup_directory": self._configure_directory("backups")}
 
     def ldap_plugin(self):
         """ Configures the LDAP plugin """
