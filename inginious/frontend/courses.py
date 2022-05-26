@@ -33,7 +33,7 @@ def _migrate_from_v_0_6(content, task_list):
 class Course(object):
     """ A course with some modification for users """
 
-    def __init__(self, courseid, content, course_fs, task_factory, plugin_manager, task_dispensers):
+    def __init__(self, courseid, content, course_fs, task_factory, plugin_manager, task_dispensers, database):
         self._id = courseid
         self._content = content
         self._fs = course_fs
@@ -70,6 +70,7 @@ class Course(object):
             self._registration_ac = self._content.get('registration_ac', None)
             if self._registration_ac not in [None, "username", "binding", "email"]:
                 raise Exception("Course has an invalid value for registration_ac: " + self.get_id())
+            self._registration_ac_accept = self._content.get('registration_ac_accept', True)
             self._registration_ac_list = self._content.get('registration_ac_list', [])
             self._groups_student_choice = self._content.get("groups_student_choice", False)
             self._allow_unregister = self._content.get('allow_unregister', True)
@@ -83,7 +84,7 @@ class Course(object):
             # Here we use a lambda to encourage the task dispenser to pass by the task_factory to fetch course tasks
             # to avoid them to be cached along with the course object. Passing the task factory as argument
             # would require to pass the course too, and have a useless reference back.
-            self._task_dispenser = task_dispenser_class(lambda: self._task_factory.get_all_tasks(self), self._content.get("dispenser_data", ''))
+            self._task_dispenser = task_dispenser_class(lambda: self._task_factory.get_all_tasks(self), self._content.get("dispenser_data", ''), database, self.get_id())
         except:
             raise Exception("Course has an invalid YAML spec: " + self.get_id())
 
@@ -170,6 +171,10 @@ class Course(object):
         """ Returns either None, "username", "binding", or "email", depending on the method used to verify that users can register to the course """
         return self._registration_ac
 
+    def get_access_control_accept(self):
+        """ Returns either True (accept) or False (deny), depending on the control type used to verify that users can register to the course """
+        return self._registration_ac_accept
+
     def get_access_control_list(self) -> List[str]:
         """ Returns the list of all users/emails/binding methods/... (see get_access_control_method) allowed by the AC list """
         return self._registration_ac_list
@@ -210,7 +215,8 @@ class Course(object):
 
         # check that at least one key matches in the list
         keys = keys_per_access_control_method[self.get_access_control_method()]()
-        return any(self._registration_ac_regex.match(key) for key in keys)
+        at_least_one = any(self._registration_ac_regex.fullmatch(key) for key in keys)
+        return at_least_one if self.get_access_control_accept() else not at_least_one
 
     def allow_preview(self):
         return self._allow_preview
