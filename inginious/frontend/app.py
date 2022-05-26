@@ -147,7 +147,7 @@ def get_app(config):
         database.user_tasks.create_index([("courseid", pymongo.ASCENDING), ("taskid", pymongo.ASCENDING)])
         database.user_tasks.create_index([("courseid", pymongo.ASCENDING)])
         database.user_tasks.create_index([("username", pymongo.ASCENDING)])
-        database.db_version.insert({"db_version": DB_VERSION})
+        database.db_version.insert_one({"db_version": DB_VERSION})
     elif db_version.get("db_version", 0) != DB_VERSION:
         raise Exception("Please update the database before running INGInious")
 
@@ -167,7 +167,8 @@ def get_app(config):
         "el": "ελληνικά",
         "vi": "Tiếng Việt",
         "nl": "Nederlands",
-        "de": "Deutsch"
+        "de": "Deutsch",
+        "he": "עִבְרִית"
     }
 
     available_languages = {"en": "English"}
@@ -221,7 +222,7 @@ def get_app(config):
                                                                    DisplayableMatchProblem]
     }
 
-    course_factory, task_factory = create_factories(fs_provider, default_task_dispensers, default_problem_types, plugin_manager)
+    course_factory, task_factory = create_factories(fs_provider, default_task_dispensers, default_problem_types, plugin_manager, database)
 
     user_manager = UserManager(database, config.get('superadmins', []))
 

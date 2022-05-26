@@ -4,9 +4,11 @@ INGInious
 .. image:: https://api.codacy.com/project/badge/Grade/7cd8340004ef4d409143d5c24259efc1
    :alt: Codacy Badge
    :target: https://app.codacy.com/gh/UCL-INGI/INGInious?utm_source=github.com&utm_medium=referral&utm_content=UCL-INGI/INGInious&utm_campaign=Badge_Grade_Dashboard
-
-.. image:: http://jenkins2.info.ucl.ac.be/job/INGInious/badge/icon
-    :target: http://jenkins2.info.ucl.ac.be/job/INGInious/
+.. image:: https://app.codacy.com/project/badge/Coverage/9102bbf54901478dbe288a386195f77e
+   :alt: Codacy coverage Badge
+   :target: https://www.codacy.com/gh/UCL-INGI/INGInious/dashboard?utm_source=github.com&utm_medium=referral&utm_content=UCL-INGI/INGInious&utm_campaign=Badge_Coverage
+.. image:: https://github.com/UCL-INGI/INGInious/actions/workflows/ci.yml/badge.svg
+    :target: https://github.com/UCL-INGI/INGInious/actions
 .. image:: https://readthedocs.org/projects/inginious/badge/?version=latest
     :target: https://readthedocs.org/projects/inginious/?badge=latest
 .. image:: http://weblate.info.ucl.ac.be/widgets/inginious/-/frontend/svg-badge.svg

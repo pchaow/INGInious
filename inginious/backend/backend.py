@@ -18,10 +18,14 @@ from inginious.common.messages import BackendNewJob, AgentJobStarted, AgentJobDo
     BackendJobDone, BackendJobStarted, BackendJobSSHDebug, ClientNewJob, ClientKillJob, BackendKillJob, AgentHello, \
     ClientHello, BackendUpdateEnvironments, Unknown, Ping, Pong, ClientGetQueue, BackendGetQueue, ZMQUtils
 
+# This will be pushed inside a TopicPriorityQueue that uses natural ordering (smallest element has the highest priority)
+# priority and time_received must thus be the two first element of the tuples.
+# a tuple with a small priority value will actually be processed first.
 WaitingJob = namedtuple('WaitingJob', ['priority', 'time_received', 'client_addr', 'job_id', 'msg'])
+
 RunningJob = namedtuple('RunningJob', ['agent_addr', 'client_addr', 'msg', 'time_started'])
 EnvironmentInfo = namedtuple('EnvironmentInfo', ['last_id', 'created_last', 'agents', 'type'])
-AgentInfo = namedtuple('AgentInfo', ['name', 'environments'])  # environments is a list of tuple (type, environment)
+AgentInfo = namedtuple('AgentInfo', ['name', 'environments', 'ssh_allowed'])  # environments is a list of tuple (type, environment)
 
 class Backend(object):
     """
@@ -134,17 +138,16 @@ class Backend(object):
         self._logger.info("Adding a new job %s %s to the queue", client_addr, message.job_id)
         job = WaitingJob(message.priority, time.time(), client_addr, message.job_id, message)
         self._waiting_jobs[message.job_id] = job
-        self._waiting_jobs_pq.put((message.environment_type, message.environment), job)
+        self._waiting_jobs_pq.put((message.environment_type, message.environment, self._get_ssh_allowed(message)), job)
 
         await self.update_queue()
 
     async def handle_client_kill_job(self, client_addr, message: ClientKillJob):
         """ Handle an ClientKillJob message. Remove a job from the waiting list or send the kill message to the right agent. """
-        # Check if the job is not in the queue
+        # Check if the job is not in the waiting list
         if message.job_id in self._waiting_jobs:
-            # Erase the job reference in priority queue
-            job = self._waiting_jobs.pop(message.job_id)
-            job._replace(msg=None)
+            # Erase the job in waiting list
+            del self._waiting_jobs[message.job_id]
 
             # Do not forget to send a JobDone
             await ZMQUtils.send_with_addr(self._client_socket, client_addr, BackendJobDone(message.job_id, ("killed", "You killed the job"),
@@ -170,12 +173,8 @@ class Backend(object):
 
         #jobs_waiting: a list of tuples in the form
         #(job_id, is_current_client_job, info, launcher, max_time)
-        jobs_waiting = list()
-
-        for job in self._waiting_jobs.values():
-            if isinstance(job.msg, ClientNewJob):
-                jobs_waiting.append((job.job_id, job.client_addr == client_addr, job.msg.course_id+"/"+job.msg.task_id, job.msg.launcher,
-                                     self._get_time_limit_estimate(job.msg)))
+        jobs_waiting = [(job.job_id, job.client_addr == client_addr, job.msg.course_id+"/"+job.msg.task_id, job.msg.launcher,
+                                     self._get_time_limit_estimate(job.msg)) for job in self._waiting_jobs.values()]
 
         await ZMQUtils.send_with_addr(self._client_socket, client_addr, BackendGetQueue(jobs_running, jobs_waiting))
 
@@ -194,12 +193,16 @@ class Backend(object):
                 job = None
                 while job is None:
                     # keep the object, do not unzip it directly! It's sometimes modified when a job is killed.
-                    job = self._waiting_jobs_pq.get(self._registered_agents[agent_addr].environments)
+
+                    topics = [(*env, False) for env in self._registered_agents[agent_addr].environments]
+                    if self._registered_agents[agent_addr].ssh_allowed:
+                        topics += [(*env, True) for env in self._registered_agents[agent_addr].environments]
+
+                    job = self._waiting_jobs_pq.get(topics)
                     priority, insert_time, client_addr, job_id, job_msg = job
 
-                    # Killed job, removing it from the mapping
-                    if not job_msg:
-                        del self._waiting_jobs[job_id]
+                    # Ensure the job has not been removed (killed)
+                    if job_id not in self._waiting_jobs:
                         job = None  # repeat the while loop. we need a job
             except queue.Empty:
                 continue  # skip agent, nothing to do!
@@ -232,7 +235,7 @@ class Backend(object):
 
         self._registered_agents[agent_addr] = AgentInfo(message.friendly_name,
                                                         [(etype, env) for etype, envs in
-                                                         message.available_environments.items() for env in envs])
+                                                         message.available_environments.items() for env in envs], message.ssh_allowed)
         self._available_agents.extend([agent_addr for _ in range(0, message.available_job_slots)])
         self._ping_count[agent_addr] = 0
 
@@ -402,3 +405,10 @@ class Backend(object):
             return int(job_info.environment_parameters["limits"]["time"])
         except:
             return -1 # unknown
+
+    def _get_ssh_allowed(self, job_info: ClientNewJob):
+        """
+            Returns if the job requires that the agent allows ssh
+            For this to work, ["ssh_allowed"] must be a parameter of the environment.
+        """
+        return job_info.environment_parameters.get("ssh_allowed", False)

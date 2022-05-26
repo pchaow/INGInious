@@ -31,6 +31,7 @@ install_requires = [
     "importlib_metadata >= 3.7.0",
     'dataclasses >= 0.8; python_version < "3.7.0"',
     "pytidylib>=0.2.4",
+    "sphinx-autodoc-typehints>=1.12.0",
     "python-docutils-graphviz>=1.0.3"
 ]
 
@@ -41,10 +42,10 @@ test_requires = [
 ]
 
 doc_requires = [
-    "sphinx==3.5.4",
-    "sphinx_rtd_theme==0.5.2",
-    "sphinx-tabs==2.1.0",
-    "ipython==7.6.1"
+    "sphinx==4.5.0",
+    "sphinx_rtd_theme==1.0.0",
+    "sphinx-tabs==3.3.1",
+    "ipython==8.2.0"
 ]
 
 if sys.platform == 'win32':
