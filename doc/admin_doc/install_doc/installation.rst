@@ -90,6 +90,7 @@ The previously mentioned dependencies can be installed, for Ubuntu 18.04+:
     # echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
     # apt-get update
     # apt-get install docker-ce docker-ce-cli
+    # apt-get install graphviz
 
 You may also add ``libxmlsec1-dev libltdl-dev`` for the SAML2 auth plugin
 

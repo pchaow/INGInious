@@ -32,6 +32,7 @@ install_requires = [
     'dataclasses >= 0.8; python_version < "3.7.0"',
     "pytidylib>=0.2.4",
     "sphinx-autodoc-typehints>=1.12.0",
+    "python-docutils-graphviz>=1.0.3"
 ]
 
 test_requires = [
