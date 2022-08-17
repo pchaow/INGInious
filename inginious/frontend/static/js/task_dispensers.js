@@ -363,10 +363,21 @@ function dispenser_util_get_sections_list(element) {
 
         const content = $(this).children(".content");
         if ($(this).hasClass("tasks_list")) {
-            structure["tasks_list"] = dispenser_util_get_tasks_list(content);
+            tasks_id = dispenser_util_get_tasks_list(content);
+            structure["tasks_list"] = tasks_id;
+
+            var weights = dispenser_util_get_weights(tasks_id);
+            if(Object.keys(weights).length > 0){
+                structure["weights"] = weights;
+            }
+
+            structure["no_stored_submissions"] = dispenser_util_get_no_stored_submissions(tasks_id);
+            structure["evaluation_mode"] = dispenser_util_get_evaluation_mode(tasks_id);
+            structure["categories"] = dispenser_util_get_categories(tasks_id);
         } else if ($(this).hasClass("sections_list")) {
             structure["sections_list"] = dispenser_util_get_sections_list(content);
         }
+
         return structure;
     }).get();
 }
@@ -380,6 +391,64 @@ function dispenser_util_get_section_config(element) {
             config_list[this.id] = this.value;
     });
     return config_list;
+}
+
+function dispenser_util_get_weights(tasks_id) {
+    const weight_list = {};
+    $(".weight").each(function(){
+        if(this.name in tasks_id){
+            if(this.value === ""){
+                weight_list[this.name] = 1;
+            }else{
+                weight_list[this.name] = parseFloat(this.value);
+            }
+        }
+    });
+    return weight_list;
+}
+
+function dispenser_util_get_no_stored_submissions(tasks_id){
+    const no_stored_submissions = {};
+    $(".no_stored_submissions").each(function(){
+        var taskid = this.id;
+        if(taskid in tasks_id && this.checked && this.value === "store_all"){
+            no_stored_submissions[taskid] = 0;
+        }else if(taskid in tasks_id && this.checked && this.value === "store_not_all"){
+            $("#no_stored_submissions_value_"+taskid).each(function(){
+                var value = parseInt(this.value);
+                if(!isNaN(value)){
+                    no_stored_submissions[taskid] = value;
+                }else{
+                    no_stored_submissions[taskid] = 5;
+                }
+            });
+        }
+    });
+    return no_stored_submissions;
+}
+
+function dispenser_util_get_evaluation_mode(tasks_id){
+    const evaluation_mode = {};
+    $(".evaluation_submission").each(function(){
+        var taskid = this.id;
+        if(taskid in tasks_id && this.checked && this.value === "best"){
+            evaluation_mode[taskid] = "best";
+        }else if(taskid in tasks_id && this.checked && this.value === "last"){
+            evaluation_mode[taskid] = "last"
+        }
+    });
+    return evaluation_mode;
+}
+
+function dispenser_util_get_categories(tasks_id){
+    const categories = {};
+    $(".categories").each(function(){
+        var taskid = this.id;
+        if(taskid in tasks_id && this.value !== ""){
+            categories[taskid] = this.value.split(",");
+        }
+    });
+    return categories;
 }
 
 function dispenser_util_get_tasks_list(element) {

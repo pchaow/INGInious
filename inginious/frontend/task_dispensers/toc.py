@@ -15,6 +15,8 @@ class TableOfContents(TaskDispenser):
     def __init__(self, task_list_func, dispenser_data, database, course_id):
         self._task_list_func = task_list_func
         self._toc = SectionsList(dispenser_data)
+        self._database = database
+        self._course_id = course_id
 
     @classmethod
     def get_id(cls):
@@ -25,6 +27,75 @@ class TableOfContents(TaskDispenser):
     def get_name(cls, language):
         """ Returns the localized task dispenser name """
         return _("Table of contents")
+
+    def get_weight(self, taskid):
+        """ Returns the weight of taskid """
+        try:
+            struct = self._toc.to_structure()
+            for elem in struct:
+                weight = self._toc.get_value_rec(taskid,elem,"weights")
+                if weight is not None:
+                    return weight
+            return 1
+        except:
+            return 1
+
+    def get_no_stored_submissions(self,taskid):
+        """Returns the maximum stored submission specified by the administrator"""
+        try:
+            struct = self._toc.to_structure()
+            for elem in struct:
+                no_stored_submissions = self._toc.get_value_rec(taskid,elem,"no_stored_submissions")
+                if no_stored_submissions is not None:
+                    return no_stored_submissions
+            return 0
+        except:
+            return 0
+
+    def get_evaluation_mode(self,taskid):
+        """Returns the evaluation mode specified by the administrator"""
+        try:
+            struct = self._toc.to_structure()
+            for elem in struct:
+                evaluation_mode = self._toc.get_value_rec(taskid,elem,"evaluation_mode")
+                if evaluation_mode is not None:
+                    return evaluation_mode
+            return "best"
+        except:
+            return "best"
+
+    def get_categories(self,taskid):
+        """Returns the categories specified for the taskid by the administrator"""
+        try:
+            struct = self._toc.to_structure()
+            for elem in struct:
+                categories = self._toc.get_value_rec(taskid,elem,"categories")
+                if categories is not None:
+                    return categories
+            return []
+        except:
+            return []
+
+    def get_all_categories(self):
+        """Returns the categories specified by the administrator"""
+        tasks = self._toc.get_tasks()
+        all_categories = []
+        for task in tasks:
+            try:
+                struct = self._toc.to_structure()
+                for elem in struct:
+                    categories = self._toc.get_value_rec(task,elem,"categories")
+                    if categories is not None:
+                        all_categories += categories
+            except:
+                return all_categories
+        return all_categories
+
+    def get_course_grade(self, username):
+        """ Returns the grade of a user for the current course"""
+        task_list = self.get_user_task_list([username])[username]
+        user_tasks = self._database.user_tasks.find({"username": username, "courseid": self._course_id, "taskid": {"$in": task_list}})
+        return self._toc.get_course_grade_weighted_sum(user_tasks, task_list, self.get_weight)
 
     def get_dispenser_data(self):
         """ Returns the task dispenser data structure """

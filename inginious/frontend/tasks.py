@@ -103,15 +103,6 @@ class Task(object):
         else:
             self._contact_url = ""
 
-        # Submission storage
-        self._stored_submissions = int(self._data.get("stored_submissions", 0))
-
-        # Default download
-        self._evaluate = self._data.get("evaluate", "best")
-
-        # Grade weight
-        self._weight = float(self._data.get("weight", 1.0))
-
         # _accessible
         self._accessible = AccessibleTime(self._data.get("accessible", None))
 
@@ -126,9 +117,6 @@ class Task(object):
         
         # Regenerate input random
         self._regenerate_input_random = bool(self._data.get("regenerate_input_random", False))
-
-        # Category tags
-        self._categories = self._data.get("categories", [])
 
     def get_translation_obj(self, language):
         return self._translations.get(language, gettext.NullTranslations())
@@ -201,10 +189,6 @@ class Task(object):
 
         return task_problem_types.get(problem_content.get('type', ""))(problemid, problem_content, self._translations, self._task_fs)
 
-    def get_grading_weight(self):
-        """ Get the relative weight of this task in the grading """
-        return self._weight
-
     def get_accessible_time(self, plugin_override=True):
         """  Get the accessible time of this task """
         vals = self._plugin_manager.call_hook('task_accessibility', course=self.get_course(), task=self, default=self._accessible)
@@ -252,18 +236,6 @@ class Task(object):
         for problem in self._problems:
             input_data = problem.adapt_input_for_backend(input_data)
         return input_data
-
-    def get_stored_submissions(self):
-        """ Indicates if only the last submission must be stored for the task """
-        return self._stored_submissions
-
-    def get_evaluate(self):
-        """ Indicates the default download for the task """
-        return self._evaluate
-
-    def get_categories(self):
-        """ Returns the tags id associated to the task """
-        return [category for category in self._categories if category in self._course.get_tags()]
         
     def get_number_input_random(self):
         """ Return the number of random inputs """
