@@ -40,7 +40,6 @@ from inginious.frontend.pages.course_admin.student_info import CourseStudentInfo
 from inginious.frontend.pages.course_admin.submission import SubmissionPage
 from inginious.frontend.pages.course_admin.submissions import CourseSubmissionsPage
 from inginious.frontend.pages.course_admin.task_list import CourseTaskListPage
-from inginious.frontend.pages.course_admin.tags import CourseTagsPage
 from inginious.frontend.pages.course_admin.audience_edit import CourseEditAudience
 from inginious.frontend.pages.course_admin.task_edit import CourseEditTask
 from inginious.frontend.pages.course_admin.task_edit_file import CourseTaskFiles
@@ -52,7 +51,8 @@ from inginious.frontend.pages.course_admin.search_user import CourseAdminSearchU
 
 class CookielessConverter(BaseConverter):
     # Parse the cookieless sessionid at the beginning of the url
-    regex = r"((@)([a-f0-9A-F_]*)(@/))?"
+    regex = "@[a-f0-9A-F_]*@/|"
+    part_isolating = False
 
     def to_python(self, value):
         return value[1:-2]
@@ -118,8 +118,6 @@ def init_flask_mapping(flask_app):
                            view_func=CourseSubmissionsPage.as_view('coursesubmissionspage'))
     flask_app.add_url_rule('/<cookieless:sessionid>admin/<courseid>/tasks',
                            view_func=CourseTaskListPage.as_view('coursetasklistpage'))
-    flask_app.add_url_rule('/<cookieless:sessionid>admin/<courseid>/tags',
-                           view_func=CourseTagsPage.as_view('coursetagspage'))
     flask_app.add_url_rule('/<cookieless:sessionid>admin/<courseid>/edit/audience/<audienceid>',
                            view_func=CourseEditAudience.as_view('courseditaudience'))
     flask_app.add_url_rule('/<cookieless:sessionid>admin/<courseid>/edit/task/<taskid>',

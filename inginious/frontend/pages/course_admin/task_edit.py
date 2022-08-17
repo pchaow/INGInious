@@ -149,40 +149,12 @@ class CourseEditTask(INGIniousAdminPage):
                 data["problems"] = OrderedDict([(key, self.parse_problem(val))
                                                 for key, val in sorted(iter(problems.items()), key=lambda x: int(x[1]['@order']))])
 
-            # Categories
-            course_tags = course.get_tags()
-            data['categories'] = [cat for cat in map(str.strip, data['categories'].split(',')) if cat]
-            for category in data['categories']:
-                if category not in course_tags:
-                    return json.dumps({"status": "error", "message": _("Unknown category tag.")})
-
             # Task environment parameters
             data["environment_parameters"] = environment_parameters
-
-            # Weight
-            try:
-                data["weight"] = float(data["weight"])
-            except:
-                return json.dumps({"status": "error", "message": _("Grade weight must be a floating-point number")})
-            if data["weight"] < 0:
-                return json.dumps({"status": "error", "message": _("Grade weight must be positive!")})
 
             # Groups
             if "groups" in data:
                 data["groups"] = True if data["groups"] == "true" else False
-
-            # Submission storage
-            if "store_all" in data:
-                try:
-                    stored_submissions = data["stored_submissions"]
-                    data["stored_submissions"] = 0 if data["store_all"] == "true" else int(stored_submissions)
-                except:
-                    return json.dumps(
-                        {"status": "error", "message": _("The number of stored submission must be an integer!")})
-
-                if data["store_all"] == "false" and data["stored_submissions"] <= 0:
-                    return json.dumps({"status": "error", "message": _("The number of stored submission must be positive!")})
-                del data['store_all']
 
             # Submission limits
             if "submission_limit" in data:

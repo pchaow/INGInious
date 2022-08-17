@@ -45,7 +45,7 @@ class WebAppSubmissionManager:
         self._lti_outcome_manager = lti_outcome_manager
 
     def _job_done_callback(self, submissionid, task, result, grade, problems, tests, custom, state, archive, stdout,
-                           stderr, newsub=True):
+                           stderr, task_dispenser,  newsub=True):
         """ Callback called by Client when a job is done. Updates the submission in the database with the data returned after the completion of the
         job """
         submission = self.get_submission(submissionid, False)
@@ -85,7 +85,7 @@ class WebAppSubmissionManager:
         self._plugin_manager.call_hook("submission_done", submission=submission, archive=archive, newsub=newsub)
 
         for username in submission["username"]:
-            self._user_manager.update_user_stats(username, task, submission, result[0], grade, state, newsub)
+            self._user_manager.update_user_stats(username, task, submission, result[0], grade, state, newsub, task_dispenser)
 
         if "outcome_service_url" in submission and "outcome_result_id" in submission and "outcome_consumer_key" in submission:
             for username in submission["username"]:
@@ -139,7 +139,7 @@ class WebAppSubmissionManager:
                 inputdata["@username"] = ','.join(group["students"])
                 inputdata["@email"] = ','.join([user["email"] for user in users])
 
-    def _after_submission_insertion(self, task, inputdata, debug, submission, submissionid):
+    def _after_submission_insertion(self, task, inputdata, debug, submission, submissionid, task_dispenser):
         """
                 Called after any new submission is inserted into the database, but before starting the job.  Should be overridden in subclasses.
                 :param task: Task related to the submission
@@ -149,9 +149,9 @@ class WebAppSubmissionManager:
                 :param submissionid: submission id of the submission
                 """
 
-        return self._delete_exceeding_submissions(self._user_manager.session_username(), task)
+        return self._delete_exceeding_submissions(self._user_manager.session_username(), task, task_dispenser)
 
-    def replay_job(self, task, submission, copy=False, debug=False):
+    def replay_job(self, task, submission, task_dispenser, copy=False, debug=False):
         """
         Replay a submission: add the same job in the queue, keeping submission id, submission date and input data
         :param submission: Submission to replay
@@ -203,7 +203,7 @@ class WebAppSubmissionManager:
         jobid = self._client.new_job(1, task, inputdata,
                                      (lambda result, grade, problems, tests, custom, state, archive, stdout, stderr:
                                       self._job_done_callback(submissionid, task, result, grade, problems, tests,
-                                                              custom, state, archive, stdout, stderr, copy)),
+                                                              custom, state, archive, stdout, stderr, task_dispenser, copy)),
                                      "Frontend - {}".format(submission["username"]), debug, ssh_callback)
 
 
@@ -231,7 +231,7 @@ class WebAppSubmissionManager:
             return None
         return sub
 
-    def add_job(self, task, inputdata, debug=False):
+    def add_job(self, task, inputdata, task_dispenser, debug=False):
         """
         Add a job in the queue and returns a submission id.
         :param task:  Task instance
@@ -300,14 +300,14 @@ class WebAppSubmissionManager:
         self._before_submission_insertion(task, inputdata, debug, obj)
         obj["input"] = self._gridfs.put(bson.BSON.encode(inputdata))
         submissionid = self._database.submissions.insert_one(obj).inserted_id
-        to_remove = self._after_submission_insertion(task, inputdata, debug, obj, submissionid)
+        to_remove = self._after_submission_insertion(task, inputdata, debug, obj, submissionid, task_dispenser)
 
         ssh_callback = lambda host, port, user, password: self._handle_ssh_callback(submissionid, host, port, user, password)
 
         jobid = self._client.new_job(0, task, inputdata,
                                      (lambda result, grade, problems, tests, custom, state, archive, stdout, stderr:
                                       self._job_done_callback(submissionid, task, result, grade, problems, tests,
-                                                              custom, state, archive, stdout, stderr, True)),
+                                                              custom, state, archive, stdout, stderr, task_dispenser, True)),
                                      "Frontend - {}".format(username), debug, ssh_callback)
 
         self._database.submissions.update_one(
@@ -321,15 +321,16 @@ class WebAppSubmissionManager:
 
         return submissionid, to_remove
 
-    def _delete_exceeding_submissions(self, username, task, max_submissions_bound=-1):
+    def _delete_exceeding_submissions(self, username, task, task_dispenser):
         """ Deletes exceeding submissions from the database, to keep the database relatively small """
-
+        max_submissions_bound = -1
+        no_stored_submissions = task_dispenser.get_no_stored_submissions(task.get_id())
         if max_submissions_bound <= 0:
-            max_submissions = task.get_stored_submissions()
-        elif task.get_stored_submissions() <= 0:
+            max_submissions = no_stored_submissions
+        elif no_stored_submissions <= 0:
             max_submissions = max_submissions_bound
         else:
-            max_submissions = min(max_submissions_bound, task.get_stored_submissions())
+            max_submissions = min(max_submissions_bound, no_stored_submissions)
 
         if max_submissions <= 0:
             return []
@@ -341,7 +342,7 @@ class WebAppSubmissionManager:
         # List the entries to keep
         to_keep = set([])
 
-        if task.get_evaluate() == 'best':
+        if task_dispenser.get_evaluation_mode(task.get_id()) == 'best':
             # Find the best "status"="done" and "result"="success"
             idx_best = -1
             for idx, val in enumerate(tasks):

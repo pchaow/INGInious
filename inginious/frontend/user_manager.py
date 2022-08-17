@@ -617,13 +617,7 @@ class UserManager:
             result["task_grades"] = {dg["taskid"]: dg["grade"] for dg in result["task_grades"] if
                                      dg["taskid"] in visible_tasks}
 
-            total_weight = 0
-            grade = 0
-            for task_id in visible_tasks:
-                total_weight += tasks[task_id].get_grading_weight()
-                grade += result["task_grades"].get(task_id, 0.0) * tasks[task_id].get_grading_weight()
-
-            result["grade"] = round(grade / total_weight) if total_weight > 0 else 0
+            result["grade"] = course.get_task_dispenser().get_course_grade(username)
             retval[username] = result
 
         return retval
@@ -676,7 +670,7 @@ class UserManager:
                                                                "submissionid": None, "state": ""}},
                                              upsert=True)
 
-    def update_user_stats(self, username, task, submission, result_str, grade, state, newsub):
+    def update_user_stats(self, username, task, submission, result_str, grade, state, newsub, task_dispenser):
         """ Update stats with a new submission """
         self.user_saw_task(username, submission["courseid"], submission["taskid"])
 
@@ -686,8 +680,8 @@ class UserManager:
                 {"$inc": {"tried": 1, "tokens.amount": 1}})
 
             # Check if the submission is the default download
-            set_default = task.get_evaluate() == 'last' or \
-                          (task.get_evaluate() == 'best' and old_submission.get('grade', 0.0) <= grade)
+            set_default = task_dispenser.get_evaluation_mode(task.get_id()) == 'last' or \
+                          (task_dispenser.get_evaluation_mode(task.get_id()) == 'best' and old_submission.get('grade', 0.0) <= grade)
 
             if set_default:
                 self._database.user_tasks.find_one_and_update(
@@ -698,13 +692,13 @@ class UserManager:
             old_submission = self._database.user_tasks.find_one(
                 {"username": username, "courseid": submission["courseid"], "taskid": submission["taskid"]})
             def_sub = []
-            if task.get_evaluate() == 'best':  # if best, update cache consequently (with best submission)
+            if task_dispenser.get_evaluation_mode(task.get_id()) == 'best':  # if best, update cache consequently (with best submission)
                 def_sub = list(self._database.submissions.find(
                     {"username": username, "courseid": task.get_course_id(), "taskid": task.get_id(),
                      "status": "done"}).sort(
                     [("grade", pymongo.DESCENDING), ("submitted_on", pymongo.DESCENDING)]).limit(1))
 
-            elif task.get_evaluate() == 'last':  # if last, update cache with last submission
+            elif task_dispenser.get_evaluation_mode(task.get_id()) == 'last':  # if last, update cache with last submission
                 def_sub = list(self._database.submissions.find(
                     {"username": username, "courseid": task.get_course_id(), "taskid": task.get_id()})
                                .sort([("submitted_on", pymongo.DESCENDING)]).limit(1))
