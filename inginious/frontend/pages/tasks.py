@@ -125,7 +125,7 @@ class BaseTaskPage(object):
             eval_submission = self.database.submissions.find_one({'_id': ObjectId(submissionid)}) if submissionid else None
 
             students = [self.user_manager.session_username()]
-            if task.is_group_task() and not self.user_manager.has_admin_rights_on_course(course, username):
+            if course.get_task_dispenser().get_group_submission(taskid) and not self.user_manager.has_admin_rights_on_course(course, username):
                 group = self.database.groups.find_one({"courseid": task.get_course_id(),
                                                      "students": self.user_manager.session_username()})
                 if group is not None:
@@ -172,7 +172,7 @@ class BaseTaskPage(object):
         userinput = flask.request.form
         if "@action" in userinput and userinput["@action"] == "submit":
             # Verify rights
-            if not self.user_manager.task_can_user_submit(task, username, isLTI):
+            if not self.user_manager.task_can_user_submit(task, username, lti=isLTI):
                 return json.dumps({"status": "error", "title": _("Error"), "text": _("You are not allowed to submit for this task.")})
 
             # Retrieve input random and check still valid

@@ -76,16 +76,26 @@ class WebAppSubmissionManager:
         }
 
         # Save submission to database
-        submission = self._database.submissions.find_one_and_update(
-            {"_id": submission["_id"]},
-            {"$set": data, "$unset": unset_obj},
-            return_document=ReturnDocument.AFTER
-        )
+        try:
+            submission = self._database.submissions.find_one_and_update(
+                {"_id": submission["_id"]},
+                {"$set": data, "$unset": unset_obj},
+                return_document=ReturnDocument.AFTER
+            )
+
+            for username in submission["username"]:
+                self._user_manager.update_user_stats(username, task, submission, result[0], grade, state, newsub, task_dispenser)
+
+        # Check for size as it also takes the MongoDB command into consideration
+        except pymongo.errors.DocumentTooLarge:
+            data = {"status": "error", "text": _("Maximum submission size exceeded. Check feedback, stdout, stderr and state."), "grade": 0.0}
+            submission = self._database.submissions.find_one_and_update(
+                {"_id": submission["_id"]},
+                {"$set": data, "$unset": unset_obj},
+                return_document=ReturnDocument.AFTER
+            )
 
         self._plugin_manager.call_hook("submission_done", submission=submission, archive=archive, newsub=newsub)
-
-        for username in submission["username"]:
-            self._user_manager.update_user_stats(username, task, submission, result[0], grade, state, newsub, task_dispenser)
 
         if "outcome_service_url" in submission and "outcome_result_id" in submission and "outcome_consumer_key" in submission:
             for username in submission["username"]:
@@ -107,15 +117,17 @@ class WebAppSubmissionManager:
         :param obj: the new document that will be inserted
         """
         username = self._user_manager.session_username()
+        course = task.get_course()
+        is_group_task =course.get_task_dispenser().get_group_submission(task.get_id())
 
-        if task.is_group_task() and not self._user_manager.has_staff_rights_on_course(task.get_course(), username):
-            group = self._database.groups.find_one({"courseid": task.get_course_id(), "students": username})
+        if is_group_task and not self._user_manager.has_staff_rights_on_course(course, username):
+            group = self._database.groups.find_one({"courseid": course.get_id(), "students": username})
             obj.update({"username": group["students"]})
         else:
             obj.update({"username": [username]})
 
         lti_info = self._user_manager.session_lti_info()
-        if lti_info is not None and task.get_course().lti_send_back_grade():
+        if lti_info is not None and course.lti_send_back_grade():
             outcome_service_url = lti_info["outcome_service_url"]
             outcome_result_id = lti_info["outcome_result_id"]
             outcome_consumer_key = lti_info["consumer_key"]
@@ -133,8 +145,8 @@ class WebAppSubmissionManager:
         # If we are submitting for a group, send the group (user list joined with ",") as username
         if "group" not in [p.get_id() for p in task.get_problems()]:  # do not overwrite
             username = self._user_manager.session_username()
-            if task.is_group_task() and not self._user_manager.has_staff_rights_on_course(task.get_course(), username):
-                group = self._database.groups.find_one({"courseid": task.get_course_id(), "students": username})
+            if is_group_task and not self._user_manager.has_staff_rights_on_course(course, username):
+                group = self._database.groups.find_one({"courseid": course.get_id(), "students": username})
                 users = self._database.users.find({"username": {"$in": group["students"]}})
                 inputdata["@username"] = ','.join(group["students"])
                 inputdata["@email"] = ','.join([user["email"] for user in users])
@@ -283,6 +295,7 @@ class WebAppSubmissionManager:
             {"random": 1, "state": 1})
         inputdata["@random"] = states["random"] if "random" in states else []
         inputdata["@state"] = states["state"] if "state" in states else ""
+        inputdata["@settings"] = self._user_manager.get_course_user_settings(username, task.get_course())
 
         # Send LTI information to the client except "consumer_key"
         lti_info = self._user_manager.session_lti_info()

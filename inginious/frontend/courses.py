@@ -11,24 +11,24 @@ import re
 from typing import List
 from collections import OrderedDict
 
-from inginious.common.additional_field import AdditionalField
+from inginious.frontend.user_settings.course_user_setting import CourseUserSetting
 from inginious.common.tags import Tag
 from inginious.frontend.accessible_time import AccessibleTime
 from inginious.frontend.parsable_text import ParsableText
 from inginious.frontend.user_manager import UserInfo
 from inginious.frontend.task_dispensers.toc import TableOfContents
 
+
 def _migrate_from_v_0_6(content, task_list):
     if 'task_dispenser' not in content:
         content["task_dispenser"] = "toc"
         if 'toc' in content:
-            content['dispenser_data'] = content["toc"]
+            content['dispenser_data'] = {"toc": content["toc"]}
         else:
             ordered_tasks = OrderedDict(sorted(list(task_list.items()),
                                                key=lambda t: (int(t[1]._data.get('order', -1)), t[1].get_id())))
-            indexed_task_list = {taskid: rank for rank, taskid in enumerate(ordered_tasks.keys())}
-            content['dispenser_data'] = [{"id": "tasks-list", "title": _("List of exercises"),
-                                          "rank": 0, "tasks_list": indexed_task_list}]
+            content['dispenser_data'] = {"toc": [{"id": "tasks-list", "title": _("List of exercises"),
+                                          "rank": 0, "tasks_list": list(ordered_tasks.keys())}], "config": {}}
 
 
 class Course(object):
@@ -81,10 +81,10 @@ class Course(object):
             self._lti_keys = self._content.get('lti_keys', {})
             self._lti_send_back_grade = self._content.get('lti_send_back_grade', False)
             self._tags = {key: Tag(key, tag_dict, self.gettext) for key, tag_dict in self._content.get("tags", {}).items()}
-            self._additional_fields = {key: AdditionalField(key,
-                                                            field_dict["description"],
-                                                            field_dict["type"])
-                                       for key, field_dict in self._content.get("fields", {}).items()}
+            self._course_user_setting = {key: CourseUserSetting(key,
+                                                                field_dict["description"],
+                                                                field_dict["type"])
+                                         for key, field_dict in self._content.get("fields", {}).items()}
             task_dispenser_class = task_dispensers.get(self._content.get('task_dispenser', 'toc'), TableOfContents)
             # Here we use a lambda to encourage the task dispenser to pass by the task_factory to fetch course tasks
             # to avoid them to be cached along with the course object. Passing the task factory as argument
@@ -243,11 +243,11 @@ class Course(object):
     def get_tags(self):
         return self._tags
 
-    def get_additional_fields(self):
+    def get_course_user_settings(self):
         """
-        :return: The additional fields dictionary for a course.
+        :return: The course user settings dictionary for a course.
         """
-        return self._additional_fields
+        return self._course_user_setting
 
     def get_task_dispenser(self):
         """
